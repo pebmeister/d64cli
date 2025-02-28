@@ -1,4 +1,4 @@
-﻿// written by Paul Baxter
+// written by Paul Baxter
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -27,7 +27,7 @@ void Backup(const std::string& source, const std::string& target);
 bool copyFiles(d64& sourceDisk, d64& targetDisk);
 
 void handleHelp();
-void handleCreate(const std::string& diskfile);
+void handleCreate(const std::string& diskfile, bool fortyTracks);
 void handleBAM(const std::string& diskfile);
 void handleDumpSector(const std::string& diskfile, int track, int sector);
 void handleAdd(const std::string& diskfile, const std::string& filename);
@@ -81,8 +81,8 @@ std::map<std::string, InteractiveFunctions> functionTable = {
     {"help", {no_param, {.f0 = handleHelp}}},
     {"--help", {no_param, {.f0 = handleHelp}}},
     {"--h", {no_param, {.f0 = handleHelp}}},
-    {"create", {one_param, {.f1 = handleCreate}}},
-    {"format", {one_param, {.f1 = handleCreate}}},
+    {"create", {two_bool, {.fb = handleCreate}}},
+    {"format", {two_bool, {.fb = handleCreate}}},
     {"list", {one_param, {.f1 = handleList}}},
     {"dir", {one_param, {.f1 = handleList}}},
     {"load", {one_param, {.f1 = handleLoad}}},
@@ -134,10 +134,12 @@ void handleLoad(const std::string& diskfile)
 /// Create a d64 image
 /// </summary>
 /// <param name="filename">name of file</param>
-void handleCreate(const std::string& diskfile)
+void handleCreate(const std::string& diskfile, bool forty_tracks)
 {
     diskname = diskfile;
-    d64 disk;
+
+    auto disktype = forty_tracks ? d64::forty_track : d64::thirty_five_track;
+    d64 disk(disktype);
     disk.formatDisk("NEW DISK");
     if (disk.save(diskname)) {
         std::cout << "Created new disk: " << diskname << "\n";
@@ -159,12 +161,15 @@ void handleBAM(const std::string& diskfile)
 
     if (disk.load(diskname)) {
         auto bamPtr = disk.getBAMPtr();
-        for (auto track = 1; track <= TRACKS; ++track) {
+        for (auto track = 1; track <= disk.TRACKS; ++track) {
             std::cout << std::setw(4) << track << ' ';
             for (auto sector = 0; sector < disk.SECTORS_PER_TRACK[track - 1]; ++sector) {
                 auto byte = (sector / 8);
                 auto bit = sector % 8;
-                auto val = bamPtr->bam_track[track - 1].bytes[byte];
+                auto val = track <= TRACKS_35 ?
+                    bamPtr->bam_track[track - 1].bytes[byte] :
+                    bamPtr->bam_extra[(track - TRACKS_35) - 1].bytes[byte];
+
                 auto ch = val & (1 << bit) ? '.' : '*';
                 std::cout << std::setw(0) << ch;
             }
@@ -570,7 +575,7 @@ void handleDiskRename(const std::string& diskfile, const std::string& newname)
 
 /// <summary>
 /// Load 2 disks in memory
-/// and determine of the loaded correctly
+/// and determine if they loaded correctly
 /// </summary>
 /// <param name="sourceDisk">gets the source disk</param>
 /// <param name="targetDisk">gets the target disk</param>
@@ -767,7 +772,8 @@ void executeCommand(const std::string& command, std::vector<std::string>& params
             break;
 
         case two_bool:
-            if (!(param_error = (params.size() < 2))) {
+            flag = false;
+            if (params.size() > 1) {
                 flag = (params[1] == "true");
                 entry.fb(params[0], flag);
             }
@@ -866,6 +872,10 @@ int main(int argc, char* argv[])
         .help("List of disks to backup")
         .nargs(argparse::nargs_pattern::any);
 
+    program.add_argument("--tracks")
+        .help("number of tracks to format (35 or 40)")
+        .nargs(argparse::nargs_pattern::optional);
+
     program.add_argument("--track")
         .help("Track to dump")
         .nargs(argparse::nargs_pattern::optional);
@@ -896,7 +906,21 @@ int main(int argc, char* argv[])
 
         auto diskfile = program.get<std::string>("diskfile");
         if (command == "create" || command == "format") {
-            handleCreate(diskfile);
+            auto use40tracks = false;
+            try {
+                auto tracks = program.get<std::string>("--tracks");
+                if (tracks == "40" || tracks == "35") {
+                    use40tracks = tracks == "40";
+                }
+                else {
+                    std::cerr << "Invalid value for --tracks. Expecting 35 or 40.\n";
+                    return 0;
+                }
+            }
+            catch (const std::exception) {
+                use40tracks = false;
+            }
+            handleCreate(diskfile, use40tracks);
         }
         else if (command == "add") {
             handleAdd(diskfile, program.get<std::string>("filename"));
