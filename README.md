@@ -1,1 +1,1 @@
-Coomandline interface to d64lib
+Comandline interface to d64lib
