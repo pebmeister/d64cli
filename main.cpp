@@ -775,8 +775,8 @@ void executeCommand(const std::string& command, std::vector<std::string>& params
             flag = false;
             if (params.size() > 1) {
                 flag = (params[1] == "true");
-                entry.fb(params[0], flag);
             }
+            entry.fb(params[0], flag);
             break;
 
         case file_list:
