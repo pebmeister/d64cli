@@ -669,7 +669,7 @@ bool copyFiles(d64& sourceDisk, d64& targetDisk)
             targetDisk.save(target_name);
         }
 
-        auto fileData = sourceDisk.getFile(filename);
+        auto fileData = sourceDisk.readFile(filename);
         if (fileData.has_value()) {
             targetDisk.addFile(filename, static_cast<d64::FileType>(fileEntry.file_type), fileData.value());
         }
