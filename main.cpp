@@ -290,7 +290,7 @@ void handleList(const std::string& diskfile)
                 default:
                     std::cout << "???";
             }
-            std::cout << " " << entry.file_size[0] + entry.file_size[1] * 256  << " bytes\n";
+            std::cout << " " << entry.file_size[0] + entry.file_size[1] * 256 << " sectors\n";
         }
     }
     else {
