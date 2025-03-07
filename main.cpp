@@ -31,6 +31,7 @@ void handleCreate(const std::string& diskfile, bool fortyTracks);
 void handleBAM(const std::string& diskfile);
 void handleDumpSector(const std::string& diskfile, int track, int sector);
 void handleAdd(const std::string& diskfile, const std::string& filename);
+void handleAddRel(const std::string& diskfile, const std::string& filename, const int recordsize);
 void handleList(const std::string& diskfile);
 void handleLock(const std::string& diskfile, const std::string& filename);
 void handleLoad(const std::string& diskfile);
@@ -163,14 +164,10 @@ void handleBAM(const std::string& diskfile)
         auto bamPtr = disk.getBAMPtr();
         for (auto track = 1; track <= disk.TRACKS; ++track) {
             std::cout << std::setw(4) << track << ' ';
-            for (auto sector = 0; sector < disk.SECTORS_PER_TRACK[track - 1]; ++sector) {
-                auto byte = (sector / 8);
-                auto bit = sector % 8;
-                auto val = track <= TRACKS_35 ?
-                    bamPtr->bam_track[track - 1].bytes[byte] :
-                    bamPtr->bam_extra[(track - TRACKS_35) - 1].bytes[byte];
 
-                auto ch = val & (1 << bit) ? '.' : '*';
+            for (auto sector = 0; sector < disk.SECTORS_PER_TRACK[track - 1]; ++sector) {
+                auto free = disk.bamtrack(track - 1)->test(sector);
+                auto ch = free ? '.' : '*';
                 std::cout << std::setw(0) << ch;
             }
             std::cout << '\n';
@@ -181,6 +178,7 @@ void handleBAM(const std::string& diskfile)
         diskname.clear();
     }
 }
+
 /// <summary>
 /// Add a file to a d64 disk image
 /// </summary>
@@ -232,8 +230,10 @@ void handleAdd(const std::string& diskfile, const std::string& filename)
             filetype = d64::FileTypes::SEQ;
         else if (name.ends_with(".USR"))
             filetype = d64::FileTypes::USR;
-        else if (name.ends_with(".REL"))
-            filetype = d64::FileTypes::REL;
+        else if (name.ends_with(".REL")) {
+            std::cerr << "Error: Use addrel to add .rel files.\n";
+            return;
+        }
         else {
             std::cerr << "Error: Unknown file type. Using .PRG.\n";
             filetype = d64::FileTypes::PRG;
@@ -241,6 +241,69 @@ void handleAdd(const std::string& diskfile, const std::string& filename)
         
         name = (endindex == 0) ? name.substr(index + 1) : name.substr(index + 1, (endindex - 1) - index);
         if (disk.addFile(name, filetype, fileData)) {
+            disk.save(diskfile);
+            std::cout << "Added file: " << filename << " to " << disk.diskname() << "\n";
+        }
+        else {
+            std::cerr << "Error: Failed to add file.\n";
+            diskname.clear();
+        }
+    }
+    else {
+        std::cerr << "Error: Could not load disk.\n";
+        diskname.clear();
+    }
+}
+
+/// <summary>
+/// Add a .rel file to a d64 disk image
+/// </summary>
+/// <param name="diskfile">diskfile to use</param>
+/// <param name="filename">file to add</param>
+/// <param name="recordsize">record sie</param>
+void handleAddRel(const std::string& diskfile, const std::string& filename, const int recordsize)
+{
+    d64 disk;
+    diskname = diskfile;
+
+    // open the disk file
+    if (disk.load(diskname)) {
+        std::ifstream fs(filename, std::ios::binary);
+        if (!fs.is_open()) {
+            std::cerr << "Error: unable to open file " << filename << ".\n";
+            return;
+        }
+        fs.seekg(0, std::ios::end);
+        auto length = fs.tellg();
+
+        fs.seekg(0, std::ios::beg);
+        std::vector<uint8_t> fileData(length);
+        fs.read((char*)&fileData[0], length);
+        fs.close();
+
+        // get the name part of the filename
+        // convert to upper case and remove extension 
+        auto name = filename;
+        auto index = static_cast<int>(name.size()) - 1;
+        auto endindex = 0;
+        while (index >= 0) {
+            name[index] = toupper(name[index]);
+            if (endindex == 0) {
+                if (name[index] == '.') {
+                    endindex = index--;
+                    continue;
+                }
+            }
+            if (ispunct(name[index])) {
+                break;
+            }
+            --index;
+        }
+
+        auto filetype = d64::FileTypes::REL;
+
+        name = (endindex == 0) ? name.substr(index + 1) : name.substr(index + 1, (endindex - 1) - index);
+        if (disk.addRelFile(name, filetype, recordsize, fileData)) {
             disk.save(diskfile);
             std::cout << "Added file: " << filename << " to " << disk.diskname() << "\n";
         }
@@ -310,7 +373,7 @@ void handleLock(const std::string& diskfile, const std::string& filename)
     diskname = diskfile;
 
     if (disk.load(diskname)) {
-        if (disk.lockfile(filename)) {
+        if (disk.lockfile(filename, true)) {
             disk.save(diskfile);
             std::cout << "Locked file: " << filename << " from " << disk.diskname() << "\n";
         }
@@ -335,7 +398,7 @@ void handleUnlock(const std::string& diskfile, const std::string& filename)
     diskname = diskfile;
 
     if (disk.load(diskname)) {
-        if (disk.unlockfile(filename)) {
+        if (disk.lockfile(filename, true)) {
             disk.save(diskfile);
             std::cout << "Unlocked file: " << filename << " from " << disk.diskname() << "\n";
         }
@@ -844,7 +907,7 @@ void interactiveShell()
 int main(int argc, char* argv[])
 {
     program.add_argument("command")
-        .help("Command to execute (create, format, add, list, dir, extract, remove, rename, verify, compact, bam, dump, lock, unlock, reorder, rename-disk)")
+        .help("Command to execute (create, format, add, addrel, list, dir, extract, remove, rename, verify, compact, bam, dump, lock, unlock, reorder, rename-disk)")
         .nargs(argparse::nargs_pattern::optional);
 
     program.add_argument("diskfile")
@@ -874,6 +937,10 @@ int main(int argc, char* argv[])
 
     program.add_argument("--tracks")
         .help("number of tracks to format (35 or 40)")
+        .nargs(argparse::nargs_pattern::optional);
+
+    program.add_argument("--recordsize")
+        .help("record size for .rel files (2 - 254)")
         .nargs(argparse::nargs_pattern::optional);
 
     program.add_argument("--track")
@@ -925,6 +992,13 @@ int main(int argc, char* argv[])
         else if (command == "add") {
             handleAdd(diskfile, program.get<std::string>("filename"));
         }
+        else if (command == "addrel") {
+            int recordsize = 0;
+            auto rec = program.get<std::string>("--recordsize");
+            recordsize = atoi(rec.c_str());
+            handleAddRel(diskfile, program.get<std::string>("filename"), recordsize);
+        }
+
         else if (command == "load") {
             handleLoad(diskfile);
         }
