@@ -139,7 +139,7 @@ void handleCreate(const std::string& diskfile, bool forty_tracks)
 {
     diskname = diskfile;
 
-    auto disktype = forty_tracks ? d64::forty_track : d64::thirty_five_track;
+    auto disktype = forty_tracks ? diskType::forty_track : diskType::thirty_five_track;
     d64 disk(disktype);
     disk.formatDisk("NEW DISK");
     if (disk.save(diskname)) {
@@ -161,7 +161,6 @@ void handleBAM(const std::string& diskfile)
     diskname = diskfile;
 
     if (disk.load(diskname)) {
-        auto bamPtr = disk.getBAMPtr();
         for (auto track = 1; track <= disk.TRACKS; ++track) {
             std::cout << std::setw(4) << track << ' ';
 
@@ -223,20 +222,20 @@ void handleAdd(const std::string& diskfile, const std::string& filename)
             --index;
         }
 
-        d64::FileType filetype;
+        FileTypes filetype;
         if (name.ends_with(".PRG"))
-            filetype = d64::FileTypes::PRG;
+            filetype = FileTypes::PRG;
         else if (name.ends_with(".SEQ"))
-            filetype = d64::FileTypes::SEQ;
+            filetype = FileTypes::SEQ;
         else if (name.ends_with(".USR"))
-            filetype = d64::FileTypes::USR;
+            filetype = FileTypes::USR;
         else if (name.ends_with(".REL")) {
             std::cerr << "Error: Use addrel to add .rel files.\n";
             return;
         }
         else {
             std::cerr << "Error: Unknown file type. Using .PRG.\n";
-            filetype = d64::FileTypes::PRG;
+            filetype = FileTypes::PRG;
         }
         
         name = (endindex == 0) ? name.substr(index + 1) : name.substr(index + 1, (endindex - 1) - index);
@@ -300,7 +299,7 @@ void handleAddRel(const std::string& diskfile, const std::string& filename, cons
             --index;
         }
 
-        auto filetype = d64::FileTypes::REL;
+        auto filetype = FileTypes::REL;
 
         name = (endindex == 0) ? name.substr(index + 1) : name.substr(index + 1, (endindex - 1) - index);
         if (disk.addRelFile(name, filetype, recordsize, fileData)) {
@@ -335,19 +334,19 @@ void handleList(const std::string& diskfile)
 
             uint8_t type = entry.file_type.type;
             switch (type) {
-                case d64::FileTypes::PRG:
+                case FileTypes::PRG:
                     std::cout << "PRG";
                     break;
-                case d64::FileTypes::SEQ:
+                case FileTypes::SEQ:
                     std::cout << "SEQ";
                     break;
-                case d64::FileTypes::USR:
+                case FileTypes::USR:
                     std::cout << "USR";
                     break;
-                case d64::FileTypes::REL:
+                case FileTypes::REL:
                     std::cout << "REL";
                     break;
-                case d64::FileTypes::DEL:
+                case FileTypes::DEL:
                     std::cout << "DEL";
                     break;
                 default:
@@ -734,7 +733,7 @@ bool copyFiles(d64& sourceDisk, d64& targetDisk)
 
         auto fileData = sourceDisk.readFile(filename);
         if (fileData.has_value()) {
-            targetDisk.addFile(filename, static_cast<d64::FileType>(fileEntry.file_type), fileData.value());
+            targetDisk.addFile(filename, static_cast<FileTypes>(fileEntry.file_type), fileData.value());
         }
         else {
             std::cerr << "Error: Failed to copy \"" << filename << "\"\n";
